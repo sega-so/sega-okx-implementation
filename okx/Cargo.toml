@@ -1,0 +1,14 @@
+[package]
+name = "okx"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+solana-sdk = { workspace = true }
+spl-token = { workspace = true }
+spl-token-2022 = { workspace = true }
+tokio = { workspace = true }
+solana-client = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }

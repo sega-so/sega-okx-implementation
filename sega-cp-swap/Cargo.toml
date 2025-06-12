@@ -1,0 +1,10 @@
+[package]
+name = "sega-cp-swap"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anchor-lang = { workspace = true}
+anchor-spl = { workspace = true}
+rust_decimal = "1.26.1"
+uint = "0.10.0"
