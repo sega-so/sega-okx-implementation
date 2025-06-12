@@ -2474,6 +2474,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "log",
+ "sega-cp-swap",
  "serde_json",
  "solana-client",
  "solana-sdk",

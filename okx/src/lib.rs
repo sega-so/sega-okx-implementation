@@ -4,6 +4,8 @@ use solana_sdk::pubkey::Pubkey;
 use std::{collections::HashMap, error::Error};
 use tokio::sync::mpsc::Sender;
 
+pub mod sega;
+
 // Trait from: https://web3.okx.com/build/docs/waas/dex-integration
 #[async_trait]
 pub trait Dex: Send + Sync {
