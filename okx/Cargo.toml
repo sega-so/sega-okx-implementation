@@ -4,12 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anchor-lang = { workspace = true }
 solana-sdk = { workspace = true }
 spl-token = { workspace = true }
+anyhow = { workspace = true }
 spl-token-2022 = { workspace = true }
+solana-account-decoder = { workspace = true}
 tokio = { workspace = true }
 solana-client = { workspace = true }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
+lazy_static = { workspace = true }
 sega-cp-swap = { path = "../sega-cp-swap"}

@@ -2472,10 +2472,14 @@ dependencies = [
 name = "okx"
 version = "0.1.0"
 dependencies = [
+ "anchor-lang",
+ "anyhow",
  "async-trait",
+ "lazy_static",
  "log",
  "sega-cp-swap",
  "serde_json",
+ "solana-account-decoder",
  "solana-client",
  "solana-sdk",
  "spl-token 7.0.0",
