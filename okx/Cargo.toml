@@ -10,6 +10,7 @@ spl-token = { workspace = true }
 anyhow = { workspace = true }
 spl-token-2022 = { workspace = true }
 solana-account-decoder = { workspace = true}
+solana-transaction-status = { workspace = true }
 tokio = { workspace = true }
 solana-client = { workspace = true }
 async-trait = { workspace = true }
@@ -17,4 +18,5 @@ serde_json = { workspace = true }
 log = { workspace = true }
 lazy_static = { workspace = true }
 tokio-tungstenite = "*"
+futures-util = "*"
 sega-cp-swap = { path = "../sega-cp-swap"}

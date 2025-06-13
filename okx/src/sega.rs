@@ -1,18 +1,19 @@
 use anchor_lang::AccountDeserialize;
 use anyhow::Context;
 use async_trait::async_trait;
-use lazy_static::lazy_static;
+use futures_util::{sink::SinkExt, StreamExt};
 use log::{error, info};
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{
     rpc_client::RpcClient,
-    rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
+    rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig, RpcTransactionConfig},
     rpc_filter::RpcFilterType,
 };
 use solana_sdk::{
-    clock::Clock, commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Keypair,
+    clock::Clock, commitment_config::CommitmentConfig, pubkey::Pubkey, 
     signature::Signature, sysvar::Sysvar,
 };
+use solana_transaction_status::{UiTransactionEncoding, EncodedTransaction, UiMessage};
 use spl_token_2022::extension::{
     transfer_fee::TransferFeeConfig, BaseStateWithExtensions, StateWithExtensionsOwned,
 };
@@ -67,6 +68,29 @@ impl SegaCPMM {
             None
         }
     }
+
+    fn extract_new_pool_address(&self, client: &RpcClient, tx_sig: &str) -> Option<String> {
+        let tx = client.get_transaction_with_config(
+            &Signature::from_str(tx_sig).ok()?,
+            RpcTransactionConfig {
+                encoding: Some(UiTransactionEncoding::Json),
+                commitment: Some(CommitmentConfig::confirmed()),
+                max_supported_transaction_version: Some(0),
+            },
+        ).ok()?;
+        match tx.transaction.transaction {
+            EncodedTransaction::Accounts(accounts) => {
+                accounts.account_keys.iter()
+                    .find(|key| key.writable && !key.signer)
+                    .map(|key| key.pubkey.clone())
+            }
+            _ => {
+                error!("Failed to extract new pool address from transaction: {}", tx_sig);
+                None
+            }
+        }
+    }
+   
 }
 
 #[async_trait]
@@ -176,67 +200,92 @@ impl Dex for SegaCPMM {
         client: &RpcClient,
         address_tx: Sender<String>,
     ) -> Result<(), Box<dyn Error>> {
-        // let program_id = self.dex_program_id();
-        // let ws_url = "wss://api.mainnet-beta.solana.com";
-        // let (mut ws_stream, _) = connect_async(ws_url).await?;
-        // let subscribe_msg = format!(
-        //     r#"{"jsonrpc":"2.0","id":1,"method":"logsSubscribe","params":["mentions","{}"]}"#,
-        //     program_id
-        // );
-        // ws_stream.send(Message::Text(subscribe_msg)).await?;
+        let program_id = self.dex_program_id();
+        let ws_url = "wss://api.mainnet-beta.solana.com";
+        let (mut ws_stream, _) = connect_async(ws_url).await?;
+        let subscribe_msg = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"logsSubscribe","params":["mentions","{}"]}}"#,
+            program_id
+        );
+        ws_stream.send(Message::Text(subscribe_msg)).await?;
 
-        // while let Some(msg) = ws_stream.next().await {
-        //     let msg = msg?;
-        //     if let Message::Text(text) = msg {
-        //         let log: serde_json::Value = serde_json::from_str(&text)?;
-        //         if log.get("result").is_some() {
-        //             continue;
-        //         }
+        while let Some(msg) = ws_stream.next().await {
+            let msg = msg?;
+            if let Message::Text(text) = msg {
+                let log: serde_json::Value = serde_json::from_str(&text)?;
+                if log.get("result").is_some() {
+                    continue;
+                }
 
-        //         let params = log.get("params").and_then(|p| p.get("result")).ok_or("No params")?;
-        //         let tx_sig = params.get("signature").and_then(|s| s.as_str()).ok_or("No signature")?;
-        //         let logs = params.get("logs").and_then(|l| l.as_array()).ok_or("No logs")?;
+                let params = log.get("params").and_then(|p| p.get("result")).ok_or("No params")?;
+                let tx_sig = params.get("signature").and_then(|s| s.as_str()).ok_or("No signature")?;
+                let logs = params.get("logs").and_then(|l| l.as_array()).ok_or("No logs")?;
 
-        //         let tx = client.get_transaction(
-        //             &Signature::from_str(tx_sig)?,
-        //             CommitmentConfig::confirmed(),
-        //         )?;
-        //         if tx.meta.is_some() && tx.meta.unwrap().err.is_some() {
-        //             continue;
-        //         }
+                let tx = client.get_transaction_with_config(
+                    &Signature::from_str(tx_sig)?,
+                    RpcTransactionConfig {
+                        encoding: Some(UiTransactionEncoding::Json),
+                        commitment: Some(CommitmentConfig::confirmed()),
+                        max_supported_transaction_version: Some(0),
+                    },
+                )?;
 
-        //         let log_str = logs.iter().filter_map(|l| l.as_str()).collect::<Vec<&str>>().join(" ");
-        //         let account_keys = tx.transaction.message.account_keys;
+                if let Some(meta) = tx.transaction.meta {
+                    if meta.err.is_some() {
+                        continue;
+                    }
+                }
 
-        //         for (i, key) in account_keys.iter().enumerate() {
-        //             if tx.transaction.message.is_writable(i) {
-        //                 let pool_address = self.find_pool_address_from_account(&key.to_string());
-        //                 if pool_address.is_empty() {
-        //                     if let Some(pool_state) = self.derive_accounts_from_pool_address(client, &key.to_string()) {
-        //                         POOL_ADDRESS_MAP.lock().unwrap().insert(key.to_string(), pool_state);
-        //                         info!("Detected new {} pool address: {}", self.dex_name(), key);
-        //                         address_tx.send(key.to_string()).await?;
-        //                     }
-        //                 } else if !pool_address.is_empty() {
-        //                     info!("Detected writable account affecting pool: {}, Pool: {}", tx_sig, pool_address);
-        //                     address_tx.send(pool_address).await?;
-        //                 }
-        //             }
-        //         }
+                let log_str = logs.iter().filter_map(|l| l.as_str()).collect::<Vec<&str>>().join(" ");
+                let account_keys = match &tx.transaction.transaction {
+                    EncodedTransaction::Json(transaction) => {
+                        match &transaction.message {
+                            UiMessage::Parsed(message) => {
+                                message.account_keys.iter()
+                                    .filter_map(|acc| Some(acc.pubkey.as_ref()))
+                                    .collect::<Vec<&str>>()
+                            },
+                            UiMessage::Raw(message) => {
+                                message.account_keys.iter()
+                                    .map(|key| key.as_str())
+                                    .collect::<Vec<&str>>()
+                            },
+                        }
+                    },
+                    _ => continue,
+                };
 
-        //         if log_str.contains("initialize") {
-        //             if let Some(pool_address) = self.extract_new_pool_address(client, tx_sig) {
-        //                 if self.is_valid_pool_address(client, &pool_address) {
-        //                     if let Some(accounts) = self.derive_accounts_from_pool_address(client, &pool_address) {
-        //                         POOL_ADDRESS_MAP.lock().unwrap().insert(pool_address.clone(), accounts);
-        //                         info!("Detected new {} pool address: {}", self.dex_name(), pool_address);
-        //                         address_tx.send(pool_address).await?;
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
+                if let EncodedTransaction::Accounts(ref accounts) = tx.transaction.transaction {
+                    for (i, key) in account_keys.iter().enumerate() {
+                        if accounts.account_keys[i].writable {
+                            let pool_address = self.find_pool_address_from_account(&key.to_string());
+                            if pool_address.is_empty() {
+                                if let Some(pool_state) = self.derive_accounts_from_pool_address(client, &key.to_string()) {
+                                    POOL_ADDRESS_MAP.lock().unwrap().insert(key.to_string(), pool_state);
+                                    info!("Detected new {} pool address: {}", self.dex_name(), key);
+                                    address_tx.send(key.to_string()).await?;
+                                }
+                            } else {
+                                info!("Detected writable account affecting pool: {}, Pool: {}", tx_sig, key);
+                                address_tx.send(key.to_string()).await?;
+                            }
+                        }
+                    }
+                }
+
+                if log_str.contains("initialize") {
+                    if let Some(pool_address) = self.extract_new_pool_address(client, tx_sig) {
+                        if self.is_valid_pool_address(client, &pool_address) {
+                            if let Some(accounts) = self.derive_accounts_from_pool_address(client, &pool_address) {
+                                POOL_ADDRESS_MAP.lock().unwrap().insert(pool_address.clone(), accounts);
+                                info!("Detected new {} pool address: {}", self.dex_name(), pool_address);
+                                address_tx.send(pool_address).await?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
