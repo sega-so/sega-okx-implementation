@@ -16,4 +16,5 @@ async-trait = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 lazy_static = { workspace = true }
+tokio-tungstenite = "*"
 sega-cp-swap = { path = "../sega-cp-swap"}

@@ -2485,6 +2485,7 @@ dependencies = [
  "spl-token 7.0.0",
  "spl-token-2022 7.0.0",
  "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]
